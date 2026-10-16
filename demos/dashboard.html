@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard</title>
+<link rel="stylesheet" href="demo.css">
+<script src="../assets/js/vendor/d3.min.js"></script>
+<script src="demo.js"></script>
+<style>
+  .kpis{display:flex;gap:10px;margin-bottom:10px}
+  .kpi{flex:1;border:1px solid #eeeef0;border-radius:9px;padding:7px 11px;background:#fafafa}
+  .kpi b{display:block;font-size:19px;color:#16161a;line-height:1.25;font-family:Georgia,serif}
+  .kpi span{font-size:10.5px;color:#8a8a93;letter-spacing:.04em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <div class="d-controls" id="filters"></div>
+  <div id="chart"></div>
+  <p class="d-hint" id="hint"></p>
+</div>
+<script>
+const R = window.rnd(101);
+const gauss = () => (R() + R() + R() + R() - 2) * 0.7;
+const CATS = [['东部', 'East'], ['中部', 'Central'], ['西部', 'West'], ['东北', 'Northeast']];
+const color = d3.scaleOrdinal().range(['#4f46e5', '#0f766e', '#f59e0b', '#be185d']);
+
+const data = d3.range(300).map(function (i) {
+  const cat = Math.floor(R() * 4);
+  const gdp = Math.round(3 + Math.pow(R(), 1.6) * 60);
+  return {
+    id: i, cat: cat, gdp: gdp,
+    score: Math.max(20, Math.min(99, 42 + Math.log(gdp) * 8.5 + [6, 0, -4, 2][cat] + gauss() * 9)),
+    pop: Math.round(200 + R() * 1800)
+  };
+});
+
+const state = { ids: new Set(data.map(d => d.id)), cat: 'all' };
+const name = c => c[window.DEMO_LANG === 'en' ? 1 : 0];
+
+document.getElementById('hint').innerHTML =
+  L('<b>提示：</b>综合仪表盘：框选散点可过滤，点击分类标签可按类别筛选，悬停条形图会反向高亮散点中的对应记录。',
+    '<b>Tip:</b> a full dashboard: brush the scatter plot to filter, click a category chip to filter, and hover a bar to highlight the matching points in reverse.');
+
+const filters = document.getElementById('filters');
+function chip(label, val) {
+  const b = document.createElement('button');
+  b.className = 'd-btn' + (state.cat === val ? ' on' : '');
+  b.textContent = label;
+  b.onclick = function () { state.cat = val; draw(); };
+  filters.appendChild(b);
+}
+chip(L('全部', 'All'), 'all');
+CATS.forEach((c, i) => chip(name(c), i));
+const rs = document.createElement('button');
+rs.className = 'd-btn';
+rs.textContent = L('重置', 'Reset');
+rs.onclick = function () { state.cat = 'all'; state.ids = new Set(data.map(d => d.id)); draw(); };
+filters.appendChild(rs);
+
+function current() {
+  return data.filter(d => state.ids.has(d.id) &&
+    (state.cat === 'all' || d.cat === state.cat));
+}
+
+function draw() {
+  d3.selectAll('#filters .d-btn').classed('on', function () {
+    const t = this.textContent;
+    return state.cat === 'all' ? t === L('全部', 'All') : t === name(CATS[state.cat]);
+  });
+
+  const rows = current();
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><b>' + rows.length + '</b><span>' + L('记录数', 'records') + '</span></div>' +
+    '<div class="kpi"><b>' + (rows.length ? fmt(d3.mean(rows, d => d.score), 1) : '—') +
+    '</b><span>' + L('平均得分', 'mean score') + '</span></div>' +
+    '<div class="kpi"><b>' + (rows.length ? fmt(d3.mean(rows, d => d.gdp), 1) : '—') +
+    '</b><span>' + L('平均 GDP', 'mean GDP') + '</span></div>' +
+    '<div class="kpi"><b>' + (rows.length ? fmt(d3.max(rows, d => d.score), 1) : '—') +
+    '</b><span>' + L('最高得分', 'max score') + '</span></div>';
+
+  const c = canvas('#chart', 262, { top: 10, right: 10, bottom: 26, left: 36 });
+  const sw = c.w * 0.6, rw = c.w * 0.34, gap = c.w * 0.06;
+  const x = d3.scaleLinear().domain(d3.extent(data, d => d.gdp)).nice().range([0, sw]);
+  const y = d3.scaleLinear().domain([20, 100]).range([c.h, 0]);
+  const r = d3.scaleSqrt().domain(d3.extent(data, d => d.pop)).range([2, 8]);
+
+  c.g.append('g').attr('class', 'grid')
+    .call(d3.axisLeft(y).ticks(5).tickSize(-sw).tickFormat(''));
+  c.g.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + c.h + ')')
+    .call(d3.axisBottom(x).ticks(5).tickSizeOuter(0));
+  c.g.append('g').attr('class', 'axis').call(d3.axisLeft(y).ticks(5).tickSizeOuter(0));
+  c.g.append('text').attr('x', sw - 2).attr('y', c.h + 24).attr('text-anchor', 'end')
+    .style('font-size', '10px').style('fill', '#8a8a93').text(L('人均 GDP', 'GDP per capita'));
+
+  const T = window.tip('.wrap');
+  const dots = c.g.append('g').selectAll('circle').data(data).join('circle')
+    .attr('cx', d => x(d.gdp)).attr('cy', d => y(d.score))
+    .attr('r', d => r(d.pop))
+    .attr('fill', d => color(d.cat))
+    .attr('fill-opacity', d => current().indexOf(d) >= 0 ? 0.72 : 0.08)
+    .attr('stroke', '#fff').attr('stroke-width', 0.6)
+    .on('mouseover', function (e, d) {
+      d3.select(this).attr('fill-opacity', 1).attr('stroke', '#16161a');
+      T.show('<b>' + name(CATS[d.cat]) + '</b><br>' +
+        L('GDP', 'GDP') + ' ' + d.gdp + ' · ' + L('得分', 'score') + ' ' + fmt(d.score, 1) +
+        '<br>' + L('人口', 'pop') + ' ' + d.pop, e);
+    })
+    .on('mousemove', e => T.move(e))
+    .on('mouseout', function (d) {
+      d3.select(this).attr('stroke', '#fff')
+        .attr('fill-opacity', current().indexOf(d) >= 0 ? 0.72 : 0.08);
+      T.hide();
+    });
+
+  const brush = d3.brush().extent([[0, 0], [sw, c.h]]).on('end', function ({ selection }) {
+    if (!selection) return;
+    const [[x0, y0], [x1, y1]] = selection;
+    state.ids = new Set(data.filter(d =>
+      x(d.gdp) >= x0 && x(d.gdp) <= x1 && y(d.score) >= y0 && y(d.score) <= y1).map(d => d.id));
+    d3.select(this).call(brush.move, null);
+    draw();
+  });
+  c.g.append('g').attr('class', 'brush').call(brush);
+
+  /* 右上：分类均值条形图（悬停反向联动） */
+  const rg = c.g.append('g').attr('transform', 'translate(' + (sw + gap) + ',0)');
+  const sums = d3.rollups(rows, v => d3.mean(v, d => d.score), d => d.cat)
+    .sort((a, b) => a[0] - b[0]);
+  const bx = d3.scaleLinear().domain([0, 100]).range([0, rw - 40]);
+  const by = d3.scaleBand().domain(d3.range(4)).range([0, c.h * 0.45]).padding(0.34);
+  rg.append('text').attr('x', 0).attr('y', -1).style('font-size', '10px')
+    .style('fill', '#8a8a93').text(L('各类平均得分', 'Mean score by region'));
+  rg.selectAll('rect.b').data(d3.range(4)).join('rect').attr('class', 'b')
+    .attr('x', 0).attr('y', k => by(k)).attr('height', by.bandwidth())
+    .attr('fill', k => color(k)).attr('fill-opacity', 0.9)
+    .style('cursor', 'pointer')
+    .on('mouseover', function (e, k) {
+      dots.attr('fill-opacity', d => d.cat === k && current().indexOf(d) >= 0 ? 1 : 0.06)
+        .attr('stroke', d => d.cat === k ? '#16161a' : '#fff');
+    })
+    .on('mouseout', function () {
+      dots.attr('fill-opacity', d => current().indexOf(d) >= 0 ? 0.72 : 0.08)
+        .attr('stroke', '#fff');
+    })
+    .on('click', function (e, k) { state.cat = k; draw(); })
+    .transition().duration(450)
+    .attr('width', k => bx((sums.find(s => s[0] === k) || [0, 0])[1]));
+  rg.selectAll('text.n').data(d3.range(4)).join('text').attr('class', 'n')
+    .attr('x', rw - 36).attr('y', k => by(k) + by.bandwidth() / 2 + 3.5)
+    .style('font-size', '9.5px').style('fill', '#8a8a93')
+    .text(k => {
+      const s = sums.find(t => t[0] === k);
+      return name(CATS[k]) + ' ' + (s ? fmt(s[1], 1) : '—');
+    });
+
+  /* 右下：得分直方图 */
+  const hg = c.g.append('g').attr('transform', 'translate(' + (sw + gap) + ',' + (c.h * 0.55) + ')');
+  const hh = c.h * 0.45 - 14;
+  const bins = d3.bin().value(d => d.score).domain([20, 100]).thresholds(12)(rows);
+  const hx = d3.scaleLinear().domain([20, 100]).range([0, rw - 8]);
+  const hy = d3.scaleLinear().domain([0, d3.max(bins, b => b.length) || 1]).range([hh, 0]);
+  hg.append('text').attr('x', 0).attr('y', -3).style('font-size', '10px')
+    .style('fill', '#8a8a93').text(L('得分分布', 'Score distribution'));
+  hg.selectAll('rect').data(bins).join('rect')
+    .attr('x', b => hx(b.x0) + 1).attr('width', Math.max(hx(bins[0].x1) - hx(bins[0].x0) - 2, 1))
+    .attr('y', b => hy(b.length)).attr('height', b => hh - hy(b.length))
+    .attr('fill', '#16161a').attr('fill-opacity', 0.7);
+  hg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + hh + ')')
+    .call(d3.axisBottom(hx).ticks(4).tickSizeOuter(0));
+}
+draw();
+</script>
+</body>
+</html>

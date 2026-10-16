@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Anscombe Quartet</title>
+<link rel="stylesheet" href="demo.css">
+<script src="../assets/js/vendor/d3.min.js"></script>
+<script src="demo.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="d-controls">
+    <span class="d-label" id="lb"></span>
+    <button class="d-btn on" id="btn-line"></button>
+    <button class="d-btn" id="btn-val"></button>
+  </div>
+  <div class="d-stats" id="stats"></div>
+  <div id="chart"></div>
+  <p class="d-hint" id="hint"></p>
+</div>
+<script>
+const RAW = [
+  { g: 'I',   x: [10,8,13,9,11,14,6,4,12,7,5],      y: [8.04,6.95,7.58,8.81,8.33,9.96,7.24,4.26,10.84,4.82,5.68] },
+  { g: 'II',  x: [10,8,13,9,11,14,6,4,12,7,5],      y: [9.14,8.14,8.74,8.77,9.26,8.10,6.13,3.10,9.13,7.26,4.74] },
+  { g: 'III', x: [10,8,13,9,11,14,6,4,12,7,5],      y: [7.46,6.77,12.74,7.11,7.81,8.84,6.08,5.39,8.15,6.42,5.73] },
+  { g: 'IV',  x: [8,8,8,8,8,8,8,19,8,8,8],          y: [6.58,5.76,7.71,8.84,8.47,7.04,5.25,12.50,5.56,7.91,6.89] }
+];
+const T = window.tip('.wrap');
+let showLine = true, showVal = false;
+
+function stats(a, b) {
+  const n = a.length, ma = d3.mean(a), mb = d3.mean(b);
+  const sa = Math.sqrt(d3.sum(a.map(v => (v - ma) ** 2)) / (n - 1));
+  const sb = Math.sqrt(d3.sum(b.map(v => (v - mb) ** 2)) / (n - 1));
+  const r = d3.sum(a.map((v, i) => (v - ma) * (b[i] - mb))) / ((n - 1) * sa * sb);
+  return { ma, mb, sa, sb, r };
+}
+const S = RAW.map(d => stats(d.x, d.y));
+
+document.getElementById('lb').textContent = L('数据组：', 'Groups:');
+document.getElementById('btn-line').textContent = L('回归直线', 'Regression line');
+document.getElementById('btn-val').textContent = L('显示数值', 'Show values');
+document.getElementById('stats').innerHTML =
+  '<span>' + L('均值 x', 'mean x') + ' <b>' + fmt(S[0].ma) + '</b></span>' +
+  '<span>' + L('均值 y', 'mean y') + ' <b>' + fmt(S[0].mb) + '</b></span>' +
+  '<span>' + L('相关系数', 'r') + ' <b>' + fmt(S[0].r, 3) + '</b></span>' +
+  '<span>' + L('回归式', 'fit') + ' <b>y = 3.0 + 0.5x</b></span>';
+document.getElementById('hint').innerHTML =
+  L('<b>提示：</b>四组数据的均值、方差与相关系数几乎相同，图形形态却完全不同。把鼠标移到点上查看坐标。',
+    '<b>Tip:</b> the four groups share nearly identical mean, variance, and correlation, yet look nothing alike. Hover a point to read its coordinates.');
+
+function draw() {
+  const c = canvas('#chart', 296, { top: 14, right: 14, bottom: 30, left: 38 });
+  const pw = c.w / 2, ph = c.h / 2;
+  const x = d3.scaleLinear().domain([0, 20]).range([0, pw - 26]);
+  const y = d3.scaleLinear().domain([0, 14]).range([ph - 26, 0]);
+
+  RAW.forEach(function (d, i) {
+    const g = c.g.append('g')
+      .attr('transform', 'translate(' + (i % 2) * pw + ',' + Math.floor(i / 2) * ph + ')');
+    g.append('g').attr('class', 'axis')
+      .attr('transform', 'translate(0,' + (ph - 26) + ')')
+      .call(d3.axisBottom(x).ticks(5).tickSizeOuter(0));
+    g.append('g').attr('class', 'axis').call(d3.axisLeft(y).ticks(5).tickSizeOuter(0));
+    g.append('text').attr('x', pw - 30).attr('y', 12).attr('text-anchor', 'end')
+      .style('font-size', '11px').style('fill', '#8a8a93').text(d.g);
+
+    if (showLine) {
+      g.append('line')
+        .attr('x1', x(0)).attr('y1', y(3)).attr('x2', x(20)).attr('y2', y(13))
+        .attr('stroke', '#4f46e5').attr('stroke-dasharray', '4 3').attr('stroke-width', 1.2);
+    }
+
+    g.selectAll('circle').data(d.x.map((v, k) => ({ x: v, y: d.y[k] })))
+      .join('circle')
+      .attr('cx', p => x(p.x)).attr('cy', p => y(p.y)).attr('r', 3.6)
+      .attr('fill', '#16161a').attr('fill-opacity', 0.78)
+      .style('cursor', 'pointer')
+      .on('mouseover', function (e, p) {
+        d3.select(this).attr('r', 5.5).attr('fill', '#4f46e5');
+        T.show(L('组 ' + d.g + '：x = ' + p.x + '，y = ' + p.y,
+                 'Group ' + d.g + ': x = ' + p.x + ', y = ' + p.y), e);
+      })
+      .on('mousemove', e => T.move(e))
+      .on('mouseout', function () {
+        d3.select(this).attr('r', 3.6).attr('fill', '#16161a');
+        T.hide();
+      });
+
+    if (showVal) {
+      g.selectAll('text.val').data(d.x.map((v, k) => ({ x: v, y: d.y[k] })))
+        .join('text').attr('class', 'val')
+        .attr('x', p => x(p.x) + 6).attr('y', p => y(p.y) + 3)
+        .style('font-size', '9px').style('fill', '#8a8a93')
+        .text(p => p.y);
+    }
+  });
+}
+
+document.getElementById('btn-line').onclick = function () {
+  showLine = !showLine; this.classList.toggle('on', showLine); draw();
+};
+document.getElementById('btn-val').onclick = function () {
+  showVal = !showVal; this.classList.toggle('on', showVal); draw();
+};
+draw();
+</script>
+</body>
+</html>

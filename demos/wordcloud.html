@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Word Cloud vs Bars</title>
+<link rel="stylesheet" href="demo.css">
+<script src="../assets/js/vendor/d3.min.js"></script>
+<script src="demo.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="d-controls" id="btns"></div>
+  <div id="chart"></div>
+  <p class="d-hint" id="hint"></p>
+</div>
+<script>
+const ZH = ['数据', '可视化', '编码', '交互', '感知', '图表', '颜色', '降维', '网络', '时间',
+  '空间', '聚类', '分布', '相关', '采样', '聚合', '标度', '坐标', '布局', '评估',
+  '用户', '任务', '模型', '渲染', '动画', '过滤', '联动', '维度', '文本', '异常'];
+const EN = ['data', 'visual', 'encoding', 'interaction', 'perception', 'chart', 'color', 'reduce',
+  'network', 'time', 'space', 'cluster', 'distribution', 'correlation', 'sample', 'aggregate',
+  'scale', 'coordinate', 'layout', 'evaluation', 'user', 'task', 'model', 'render', 'animation',
+  'filter', 'linking', 'dimension', 'text', 'outlier'];
+
+const R = window.rnd(83);
+const words = (window.DEMO_LANG === 'en' ? EN : ZH).map(function (w, i) {
+  return { w: w, f: Math.round(8 + Math.pow(1 - i / 34, 2.2) * 120 + R() * 14) };
+}).sort((a, b) => b.f - a.f);
+
+const VIEWS = [{ k: 'cloud', zh: '词云', en: 'Word cloud' }, { k: 'bar', zh: '词频条形图', en: 'Frequency bars' }];
+let view = 'cloud';
+const btns = document.getElementById('btns');
+VIEWS.forEach(function (v, i) {
+  const b = document.createElement('button');
+  b.className = 'd-btn' + (i === 0 ? ' on' : '');
+  b.textContent = L(v.zh, v.en);
+  b.onclick = function () { view = v.k; draw(); };
+  btns.appendChild(b);
+});
+document.getElementById('hint').innerHTML =
+  L('<b>提示：</b>词云用字号编码词频，但长词占面积更大，难以精确比较。切换为条形图后，"第二大是哪个词"几乎可以立刻读出。',
+    '<b>Tip:</b> word clouds encode frequency by font size, but longer words occupy more area, making comparison imprecise. Switch to bars and the second most frequent word becomes obvious at once.');
+
+function draw() {
+  d3.selectAll('#btns .d-btn').classed('on', (d, i) => VIEWS[i].k === view);
+  const c = canvas('#chart', 250, { top: 10, right: 12, bottom: 22, left: 12 });
+  const T = window.tip('.wrap');
+
+  if (view === 'bar') {
+    const top = words.slice(0, 12);
+    const x = d3.scaleLinear().domain([0, d3.max(top, d => d.f)]).nice().range([0, c.w - 62]);
+    const y = d3.scaleBand().domain(top.map(d => d.w)).range([0, c.h]).padding(0.3);
+    c.g.append('g').attr('class', 'grid')
+      .call(d3.axisBottom(x).ticks(5).tickSize(c.h).tickFormat(''));
+    c.g.append('g').attr('class', 'axis').call(d3.axisLeft(y).tickSizeOuter(0));
+    c.g.selectAll('rect').data(top).join('rect')
+      .attr('y', d => y(d.w)).attr('height', y.bandwidth())
+      .attr('x', 0).attr('width', 0).attr('fill', '#4f46e5')
+      .on('mouseover', function (e, d) { T.show(d.w + ' <b>' + d.f + '</b>', e); })
+      .on('mousemove', e => T.move(e)).on('mouseout', () => T.hide())
+      .transition().duration(650).attr('width', d => x(d.f));
+    c.g.selectAll('text.v').data(top).join('text').attr('class', 'v')
+      .attr('x', 4).attr('y', c.h).style('font-size', '10px').style('fill', '#8a8a93')
+      .transition().duration(650)
+      .attr('y', d => y(d.w) + y.bandwidth() / 2 + 4)
+      .attr('x', d => x(d.f) + 5).text(d => d.f);
+    return;
+  }
+
+  const size = d3.scaleSqrt().domain(d3.extent(words, d => d.f))
+    .range([window.DEMO_LANG === 'en' ? 11 : 13, 42]);
+  const placed = [];
+  const cx = c.w / 2, cy = c.h / 2;
+  const g = c.g.append('g');
+
+  words.forEach(function (d) {
+    const t = g.append('text').attr('text-anchor', 'middle')
+      .style('font-size', size(d.f) + 'px')
+      .style('font-weight', 600)
+      .style('fill', d3.interpolateGreys(0.25 + (d.f / words[0].f) * 0.6))
+      .style('cursor', 'pointer').text(d.w);
+    const bb = t.node().getBBox();
+    const w = bb.width + 6, h = bb.height + 4;
+    let ok = false;
+    for (let step = 0; step < 2600 && !ok; step++) {
+      const a = step * 0.28;
+      const rad = 3.2 * a;
+      const px = cx + rad * Math.cos(a) * 1.55;
+      const py = cy + rad * Math.sin(a) * 0.72;
+      if (px - w / 2 < -4 || px + w / 2 > c.w + 4 || py - h / 2 < -4 || py + h / 2 > c.h + 4) continue;
+      const hit = placed.some(r =>
+        !(px + w / 2 < r.x0 || px - w / 2 > r.x1 || py + h / 2 < r.y0 || py - h / 2 > r.y1));
+      if (!hit) {
+        placed.push({ x0: px - w / 2, x1: px + w / 2, y0: py - h / 2, y1: py + h / 2 });
+        t.attr('transform', 'translate(' + px + ',' + py + ')')
+          .attr('opacity', 0).transition().delay(step * 0.4).duration(320).attr('opacity', 1);
+        ok = true;
+      }
+    }
+    if (!ok) t.remove();
+    t.on('mouseover', function (e) { T.show(d.w + ' <b>' + d.f + '</b>', e); })
+      .on('mousemove', e => T.move(e)).on('mouseout', () => T.hide());
+  });
+}
+draw();
+</script>
+</body>
+</html>

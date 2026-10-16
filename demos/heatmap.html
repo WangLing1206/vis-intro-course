@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Calendar Heatmap</title>
+<link rel="stylesheet" href="demo.css">
+<script src="../assets/js/vendor/d3.min.js"></script>
+<script src="demo.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="d-stats" id="stats"></div>
+  <div id="chart"></div>
+  <p class="d-hint" id="hint"></p>
+</div>
+<script>
+const R = window.rnd(71);
+const YEAR = 2025;
+const start = new Date(YEAR, 0, 1);
+const days = d3.timeDays(start, new Date(YEAR + 1, 0, 1)).map(function (d) {
+  const dow = d.getDay();
+  const seasonal = 40 + 26 * Math.sin((d3.timeDay.count(start, d) / 365) * Math.PI * 2 - 1.2);
+  return {
+    date: d,
+    v: Math.max(2, Math.round(seasonal + (dow === 0 || dow === 6 ? -16 : 6) + R() * 22))
+  };
+});
+const max = d3.max(days, d => d.v);
+
+document.getElementById('stats').innerHTML =
+  '<span>' + L('全年天数', 'days') + ' <b>' + days.length + '</b></span>' +
+  '<span>' + L('日均', 'daily mean') + ' <b>' + fmt(d3.mean(days, d => d.v), 1) + '</b></span>' +
+  '<span>' + L('峰值', 'peak') + ' <b>' + max + '</b></span>';
+document.getElementById('hint').innerHTML =
+  L('<b>提示：</b>日历热力图把时间分箱为"天"，用明度编码数值，擅长暴露周内与季节性的周期模式。悬停查看当日数值。',
+    '<b>Tip:</b> a calendar heatmap bins time by day and encodes value by lightness, exposing weekly and seasonal cycles. Hover a cell to read the daily value.');
+
+const c = canvas('#chart', 210, { top: 22, right: 8, bottom: 8, left: 26 });
+const weeks = d3.timeWeek.count(d3.timeWeek.floor(start), d3.timeWeek.floor(days[days.length - 1].date)) + 1;
+const cell = Math.min((c.w - weeks) / weeks, 20);
+const gx = d3.scaleBand().domain(d3.range(weeks)).range([0, weeks * (cell + 2)]).padding(0);
+const gy = d3.scaleBand().domain(d3.range(7)).range([0, 7 * (cell + 2)]).padding(0);
+const color = d3.scaleSequential(d3.interpolateBlues).domain([0, max]);
+
+const T = window.tip('.wrap');
+const dayFmt = d3.timeFormat(L('%Y年%-m月%-d日', '%b %-d, %Y'));
+
+c.g.selectAll('rect.day').data(days).join('rect')
+  .attr('class', 'day')
+  .attr('width', cell).attr('height', cell).attr('rx', 2)
+  .attr('x', d => gx(d3.timeWeek.count(d3.timeWeek.floor(start), d)))
+  .attr('y', d => gy(d.getDay()))
+  .attr('fill', d => color(d.v))
+  .attr('stroke', '#fff').attr('stroke-width', 1)
+  .style('cursor', 'pointer')
+  .on('mouseover', function (e, d) {
+    d3.select(this).attr('stroke', '#16161a').attr('stroke-width', 1.6);
+    T.show(dayFmt(d.date) + ' · <b>' + d.v + '</b>', e);
+  })
+  .on('mousemove', e => T.move(e))
+  .on('mouseout', function () {
+    d3.select(this).attr('stroke', '#fff').attr('stroke-width', 1); T.hide();
+  });
+
+d3.range(7).forEach(function (i) {
+  if (i % 2 === 1) {
+    c.g.append('text').attr('x', -6).attr('y', gy(i) + cell - 1)
+      .attr('text-anchor', 'end').style('font-size', '9.5px').style('fill', '#8a8a93')
+      .text(L(['日', '一', '二', '三', '四', '五', '六'][i], ['S', 'M', 'T', 'W', 'T', 'F', 'S'][i]));
+  }
+});
+
+const MONTHS = window.DEMO_LANG === 'en'
+  ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  : ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+d3.range(12).forEach(function (m) {
+  const d = new Date(YEAR, m, 1);
+  c.g.append('text')
+    .attr('x', gx(d3.timeWeek.count(d3.timeWeek.floor(start), d)))
+    .attr('y', -8).style('font-size', '9.5px').style('fill', '#8a8a93').text(MONTHS[m]);
+});
+
+/* 图例：明度渐变 */
+const lw = 120;
+const lg = c.g.append('g').attr('transform', 'translate(' + (c.w - lw) + ',' + (7 * (cell + 2) + 14) + ')');
+const grad = c.svg.append('defs').append('linearGradient').attr('id', 'lg1');
+d3.range(10).forEach(function (i) {
+  grad.append('stop').attr('offset', i / 9 * 100 + '%')
+    .attr('stop-color', color(max * i / 9));
+});
+lg.append('rect').attr('width', lw).attr('height', 8).attr('rx', 2)
+  .attr('fill', 'url(#lg1)');
+lg.append('text').attr('x', 0).attr('y', 20).style('font-size', '9.5px')
+  .style('fill', '#8a8a93').text('0');
+lg.append('text').attr('x', lw).attr('y', 20).attr('text-anchor', 'end')
+  .style('font-size', '9.5px').style('fill', '#8a8a93').text(max);
+</script>
+</body>
+</html>

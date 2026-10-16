@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Brushing and Linking</title>
+<link rel="stylesheet" href="demo.css">
+<script src="../assets/js/vendor/d3.min.js"></script>
+<script src="demo.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="d-controls">
+    <span class="d-label" id="lb"></span>
+    <button class="d-btn" id="reset"></button>
+  </div>
+  <div class="d-stats" id="stats"></div>
+  <div id="chart"></div>
+  <p class="d-hint" id="hint"></p>
+</div>
+<script>
+const R = window.rnd(97);
+const gauss = () => (R() + R() + R() + R() - 2) * 0.75;
+const CATS = [
+  ['理工', 'Science', 0], ['经管', 'Business', 1], ['人文', 'Humanities', 2], ['医学', 'Medicine', 3]
+];
+const data = d3.range(260).map(function (i) {
+  const c = Math.floor(R() * 4);
+  const base = [72, 65, 58, 80][c];
+  return { id: i, cat: c, x: Math.round(30 + R() * 90), y: Math.round(base + gauss() * 11) };
+});
+const color = d3.scaleOrdinal().range(['#4f46e5', '#0f766e', '#f59e0b', '#be185d']);
+
+let picked = new Set(data.map(d => d.id));
+document.getElementById('lb').textContent = L('在散点图中框选 → 其他视图联动', 'Brush the scatter plot to link views');
+document.getElementById('reset').textContent = L('重置', 'Reset');
+document.getElementById('reset').onclick = function () {
+  picked = new Set(data.map(d => d.id)); draw();
+};
+document.getElementById('hint').innerHTML =
+  L('<b>提示：</b>把选择集提升为共享状态，任一视图的刷选都会写入它，其余视图订阅并重绘——这就是多视图联动的核心机制。',
+    '<b>Tip:</b> promote the selection to shared state: any view writes into it and the others subscribe and redraw. That is the core mechanism of multi-view linking.');
+
+function draw() {
+  const c = canvas('#chart', 250, { top: 10, right: 10, bottom: 24, left: 34 });
+  const rows = data.filter(d => picked.has(d.id));
+  const sw = c.w * 0.58, rw = c.w * 0.34, gap = c.w * 0.08;
+
+  document.getElementById('stats').innerHTML =
+    '<span>' + L('已选', 'selected') + ' <b>' + rows.length + '</b> / ' + data.length + '</span>' +
+    '<span>' + L('平均分', 'mean score') + ' <b>' + (rows.length ? fmt(d3.mean(rows, d => d.y), 1) : '—') + '</b></span>' +
+    '<span>' + L('平均投入', 'mean input') + ' <b>' + (rows.length ? fmt(d3.mean(rows, d => d.x), 1) : '—') + '</b></span>';
+
+  /* 左：散点图 + 刷选 */
+  const x = d3.scaleLinear().domain(d3.extent(data, d => d.x)).nice().range([0, sw]);
+  const y = d3.scaleLinear().domain([30, 100]).range([c.h, 0]);
+  c.g.append('g').attr('class', 'grid')
+    .call(d3.axisLeft(y).ticks(5).tickSize(-sw).tickFormat(''));
+  c.g.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + c.h + ')')
+    .call(d3.axisBottom(x).ticks(5).tickSizeOuter(0));
+  c.g.append('g').attr('class', 'axis').call(d3.axisLeft(y).ticks(5).tickSizeOuter(0));
+
+  const T = window.tip('.wrap');
+  c.g.append('g').selectAll('circle').data(data).join('circle')
+    .attr('cx', d => x(d.x)).attr('cy', d => y(d.y)).attr('r', 3.4)
+    .attr('fill', d => color(d.cat))
+    .attr('fill-opacity', d => picked.has(d.id) ? 0.8 : 0.12)
+    .attr('stroke', d => picked.has(d.id) ? 'none' : '#d4d4d8')
+    .on('mouseover', function (e, d) {
+      d3.select(this).attr('r', 5.5);
+      T.show(CATS[d.cat][window.DEMO_LANG === 'en' ? 1 : 0] + ' · ' +
+        L('投入', 'input') + ' ' + d.x + ' · ' + L('得分', 'score') + ' <b>' + d.y + '</b>', e);
+    })
+    .on('mousemove', e => T.move(e))
+    .on('mouseout', function () { d3.select(this).attr('r', 3.4); T.hide(); });
+
+  const brush = d3.brush().extent([[0, 0], [sw, c.h]]).on('end', function ({ selection }) {
+    if (!selection) return;
+    const [[x0, y0], [x1, y1]] = selection;
+    picked = new Set(data.filter(d =>
+      x(d.x) >= x0 && x(d.x) <= x1 && y(d.y) >= y0 && y(d.y) <= y1).map(d => d.id));
+    d3.select(this).call(brush.move, null);
+    draw();
+  });
+  c.g.append('g').attr('class', 'brush').call(brush)
+    .call(b => b.select('.overlay').attr('cursor', 'crosshair'));
+
+  /* 右上：分类计数条形图 */
+  const rg = c.g.append('g').attr('transform', 'translate(' + (sw + gap) + ',0)');
+  const counts = d3.rollups(rows, v => v.length, d => d.cat);
+  const bx = d3.scaleLinear().domain([0, d3.max(counts, d => d[1]) || 1]).range([0, rw - 46]);
+  const by = d3.scaleBand().domain(d3.range(4)).range([0, c.h * 0.46]).padding(0.32);
+  rg.append('text').attr('x', 0).attr('y', -1)
+    .style('font-size', '10px').style('fill', '#8a8a93')
+    .text(L('按学科计数', 'Count by field'));
+  rg.selectAll('rect.b').data(d3.range(4)).join('rect').attr('class', 'b')
+    .attr('x', 0).attr('y', k => by(k)).attr('height', by.bandwidth())
+    .attr('fill', k => color(k)).attr('fill-opacity', 0.9)
+    .transition().duration(420)
+    .attr('width', k => bx((counts.find(t => t[0] === k) || [0, 0])[1]));
+  rg.selectAll('text.n').data(d3.range(4)).join('text').attr('class', 'n')
+    .attr('x', 4).attr('y', c.h * 0.46)
+    .style('font-size', '10px').style('fill', '#8a8a93')
+    .transition().duration(420)
+    .attr('y', k => by(k) + by.bandwidth() / 2 + 3.5)
+    .text(k => (counts.find(t => t[0] === k) || [0, 0])[1]);
+  rg.selectAll('text.c').data(d3.range(4)).join('text').attr('class', 'c')
+    .attr('x', rw - 42).attr('y', k => by(k) + by.bandwidth() / 2 + 3.5)
+    .attr('text-anchor', 'start').style('font-size', '10px').style('fill', '#3f3f46')
+    .text(k => CATS[k][window.DEMO_LANG === 'en' ? 1 : 0]);
+
+  /* 右下：得分直方图 */
+  const hg = c.g.append('g').attr('transform', 'translate(' + (sw + gap) + ',' + (c.h * 0.54) + ')');
+  const hh = c.h * 0.46 - 14;
+  const bins = d3.bin().value(d => d.y).domain([30, 100]).thresholds(12)(rows);
+  const hx = d3.scaleLinear().domain([30, 100]).range([0, rw - 8]);
+  const hy = d3.scaleLinear().domain([0, d3.max(bins, b => b.length) || 1]).range([hh, 0]);
+  hg.append('text').attr('x', 0).attr('y', -3)
+    .style('font-size', '10px').style('fill', '#8a8a93')
+    .text(L('得分分布', 'Score distribution'));
+  hg.selectAll('rect').data(bins).join('rect')
+    .attr('x', b => hx(b.x0) + 1).attr('width', Math.max(hx(bins[0].x1) - hx(bins[0].x0) - 2, 1))
+    .attr('y', b => hy(b.length)).attr('height', b => hh - hy(b.length))
+    .attr('fill', '#16161a').attr('fill-opacity', 0.72);
+  hg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + hh + ')')
+    .call(d3.axisBottom(hx).ticks(4).tickSizeOuter(0));
+}
+draw();
+</script>
+</body>
+</html>

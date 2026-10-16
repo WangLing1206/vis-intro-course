@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>Parallel Coordinates</title>
+<link rel="stylesheet" href="demo.css">
+<script src="../assets/js/vendor/d3.min.js"></script>
+<script src="demo.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="d-controls">
+    <span class="d-label" id="lb"></span>
+    <button class="d-btn" id="reset"></button>
+  </div>
+  <div class="d-stats" id="stats"></div>
+  <div id="chart"></div>
+  <p class="d-hint" id="hint"></p>
+</div>
+<script>
+const R = window.rnd(53);
+const gauss = () => (R() + R() + R() + R() - 2) * 0.7;
+const DIMS = [
+  ['花萼长', 'Sepal L.', 5.8, 0.9], ['花萼宽', 'Sepal W.', 3.0, 0.5],
+  ['花瓣长', 'Petal L.', 3.8, 1.8], ['花瓣宽', 'Petal W.', 1.2, 0.8]
+];
+const SPECIES = [['山鸢尾', 'Setosa'], ['变色鸢尾', 'Versicolor'], ['维吉尼亚', 'Virginica']];
+const OFF = [[0, 0], [1.5, -0.4], [2.6, 0.5]];
+const color = d3.scaleOrdinal().range(['#4f46e5', '#0f766e', '#f59e0b']);
+
+const data = [];
+SPECIES.forEach(function (s, si) {
+  for (let i = 0; i < 46; i++) {
+    const row = { sp: si };
+    DIMS.forEach(function (d, k) {
+      row['d' + k] = d[2] + OFF[si][0] * (k % 2 === 0 ? 1 : -0.5) * (0.6 + k * 0.2) + gauss() * d[3];
+    });
+    data.push(row);
+  }
+});
+
+let brushSel = {};
+document.getElementById('lb').textContent = L('在任意轴上拖动刷选', 'Drag on any axis to brush');
+document.getElementById('reset').textContent = L('清除刷选', 'Clear');
+document.getElementById('reset').onclick = function () { brushSel = {}; draw(); };
+document.getElementById('hint').innerHTML =
+  L('<b>提示：</b>平行坐标把每个属性画成一条竖轴，一条记录就是一条折线。轴上的刷选会立即过滤其他视图中的记录。',
+    '<b>Tip:</b> parallel coordinates draw each attribute as a vertical axis and each record as a polyline. Brushing an axis filters records everywhere at once.');
+
+function draw() {
+  const c = canvas('#chart', 262, { top: 24, right: 24, bottom: 20, left: 24 });
+  const keys = DIMS.map((d, i) => 'd' + i);
+  const y = {};
+  keys.forEach(function (k, i) {
+    y[k] = d3.scaleLinear().domain(d3.extent(data, d => d[k])).nice().range([c.h, 0]);
+  });
+  const x = d3.scalePoint().domain(keys).range([0, c.w]);
+
+  const position = d => keys.map(k => [x(k), y[k](d[k])]);
+  const line = d3.line();
+
+  const active = keys.filter(k => brushSel[k]);
+  const shown = data.filter(d => active.every(k =>
+    d[k] >= brushSel[k][0] && d[k] <= brushSel[k][1]));
+
+  document.getElementById('stats').innerHTML =
+    '<span>' + L('记录总数', 'records') + ' <b>' + data.length + '</b></span>' +
+    '<span>' + L('当前选中', 'selected') + ' <b>' + shown.length + '</b></span>' +
+    '<span>' + L('类别分布', 'by species') + ' <b>' +
+    SPECIES.map(s => s[window.DEMO_LANG === 'en' ? 1 : 0]).map(function (nm, i) {
+      return nm + ' ' + shown.filter(d => d.sp === i).length;
+    }).join(' · ') + '</b></span>';
+
+  const bg = c.g.append('g').selectAll('path').data(data).join('path')
+    .attr('fill', 'none').attr('stroke', '#d4d4d8').attr('stroke-width', 1)
+    .attr('d', d => line(position(d)));
+
+  const fg = c.g.append('g').selectAll('path').data(shown).join('path')
+    .attr('fill', 'none').attr('stroke', d => color(d.sp)).attr('stroke-width', 1.2)
+    .attr('stroke-opacity', 0.55).attr('d', d => line(position(d)));
+
+  const axes = c.g.selectAll('g.ax').data(keys).join('g').attr('class', 'ax')
+    .attr('transform', k => 'translate(' + x(k) + ',0)')
+    .each(function (k) {
+      d3.select(this).call(d3.axisLeft(y[k]).ticks(5).tickSizeOuter(0));
+    });
+
+  axes.append('text').attr('y', -14).attr('text-anchor', 'middle')
+    .style('font-size', '10.5px').style('fill', '#3f3f46')
+    .text((k, i) => DIMS[i][window.DEMO_LANG === 'en' ? 1 : 0]);
+
+  axes.call(d3.brushY()
+    .extent([[-12, 0], [12, c.h]])
+    .on('brush end', function ({ selection }, k) {
+      if (selection) {
+        brushSel[k] = [y[k].invert(selection[0]), y[k].invert(selection[1])];
+      } else if (brushSel[k]) {
+        delete brushSel[k];
+      } else { return; }
+      draw();
+    }));
+
+  const legend = c.g.append('g').attr('transform', 'translate(0,' + (c.h + 14) + ')');
+  let ox = 0;
+  SPECIES.forEach(function (s, i) {
+    const nm = s[window.DEMO_LANG === 'en' ? 1 : 0];
+    legend.append('rect').attr('x', ox).attr('y', -8).attr('width', 9).attr('height', 9)
+      .attr('rx', 2).attr('fill', color(i));
+    legend.append('text').attr('x', ox + 13).attr('y', 0)
+      .style('font-size', '10px').style('fill', '#8a8a93').text(nm);
+    ox += 13 + (window.DEMO_LANG === 'en' ? s[1].length * 6.2 : s[0].length * 11) + 12;
+  });
+}
+draw();
+</script>
+</body>
+</html>
