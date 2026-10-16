@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.DS_Store
+video/
+delivery/
+*.mp3
+*.mp4
+*.done
+the_environment.txt
+deploy_tmp/

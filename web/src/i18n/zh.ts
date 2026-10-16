@@ -1,0 +1,41 @@
+/** 中文 UI 文案字典 */
+const zh = {
+  'brand.name': '可视化导论',
+  'brand.sub': '课程实践站',
+  'nav.home': '首页',
+  'nav.chapters': '课程章节',
+  'hero.kicker': 'INTERACTIVE COURSE · 交互式自学',
+  'hero.title': '像读一本会动的参考书一样，学完可视化导论',
+  'hero.sub':
+    '六章课程内容，每一知识块都由讲解、代码与可交互的渲染效果构成。拖动参数，亲眼看到数据如何变成图形，图形又如何变成洞见。',
+  'hero.cta.start': '开始第一章',
+  'hero.cta.chapters': '浏览全部章节',
+  'hero.stat.chapters': '课程章节',
+  'hero.stat.blocks': '知识块(讲解+代码+效果)',
+  'hero.stat.lang': '中英双语',
+  'home.chapters.title': '课程章节',
+  'home.chapters.sub': '按顺序向下学习，每章包含可交互演示与章末自测。',
+  'home.go': '进入章节',
+  'home.pipeline.title': '一条管线，四步成图',
+  'home.pipeline.sub': '本站所有演示都沿着这条管线组织：先有问题，再谈图形。',
+  'home.gallery.title': '先睹为快：可交互演示',
+  'home.gallery.sub': '拖动参数，图形与代码同步变化——这就是本课程的学习方式。',
+  'chapter.kicker': '第 {n} 章',
+  'chapter.goals': '学习目标',
+  'chapter.quiz.title': '章末自测',
+  'chapter.prev': '上一章',
+  'chapter.next': '下一章',
+  'demo.loading': '图表加载中…',
+  'demo.error': '图表加载失败，请刷新重试。',
+  'code.copy': '复制',
+  'code.copied': '已复制',
+  'code.expand': '展开全部',
+  'code.collapse': '收起',
+  'code.linked': '与下方参数联动',
+  'quiz.correct': '回答正确',
+  'quiz.wrong': '再想想，看解析',
+  'footer.note':
+    '《可视化导论》课程实践学习网站 · 参考书：陈为《数据可视化》· 静态站点，部署于 GitHub Pages',
+} as const;
+export type ZhDict = typeof zh;
+export default zh;
